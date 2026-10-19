@@ -1,0 +1,34 @@
+R_DEF: Internal format may change without notice
+local
+color badge_amber_bg
+color badge_amber_text
+color badge_green_bg
+color badge_green_text
+color badge_red_bg
+color badge_red_text
+color bg_dark
+color card_border
+color card_dark
+color purple_container
+color purple_light
+color purple_primary
+color text_gray
+color text_white
+drawable ic_asset
+drawable ic_bar_chart
+drawable ic_box
+drawable ic_calculator
+drawable ic_calendar
+drawable ic_camera
+drawable ic_cart
+drawable ic_chevron_right
+drawable ic_close
+drawable ic_history
+drawable ic_inventory
+drawable ic_line_chart
+drawable ic_more
+drawable ic_scan
+drawable ic_search
+drawable ic_tag
+drawable ic_trash
+style AppTheme

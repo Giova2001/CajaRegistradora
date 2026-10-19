@@ -1,0 +1,70 @@
+[
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_close.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_close.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_asset.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_asset.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_chevron_right.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_chevron_right.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_more.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_more.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_box.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_box.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_history.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_history.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_camera.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_camera.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_trash.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_trash.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_calendar.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_calendar.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_search.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_search.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_cart.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_cart.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_scan.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_scan.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_tag.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_tag.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_bar_chart.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_bar_chart.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_calculator.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_calculator.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_line_chart.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_line_chart.xml"
+    },
+    {
+        "merged": "com.tiendalocal.app-debug-32:/drawable_ic_inventory.xml.flat",
+        "source": "com.tiendalocal.app-main-34:/drawable/ic_inventory.xml"
+    }
+]
