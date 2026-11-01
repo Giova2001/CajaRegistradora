@@ -1,0 +1,6 @@
+services:
+  cajaregistradora:
+    image: cajaregistradora
+    build:
+      context: .
+      dockerfile: ./Dockerfile
