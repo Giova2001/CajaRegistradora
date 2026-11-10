@@ -9,6 +9,7 @@ color badge_red_text
 color bg_dark
 color card_border
 color card_dark
+color ic_launcher_background
 color purple_container
 color purple_light
 color purple_primary
@@ -25,10 +26,13 @@ drawable ic_chevron_right
 drawable ic_close
 drawable ic_history
 drawable ic_inventory
+drawable ic_launcher_foreground
 drawable ic_line_chart
 drawable ic_more
 drawable ic_scan
 drawable ic_search
 drawable ic_tag
 drawable ic_trash
+mipmap ic_launcher
+mipmap ic_launcher_round
 style AppTheme

@@ -1,10 +1,10 @@
 {
     "logs": [
         {
-            "outputFile": "com.tiendalocal.app-mergeDebugResources-30:/values-v18/values-v18.xml",
+            "outputFile": "com.tiendalocal.app-mergeDebugResources-2:/values-v18/values-v18.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\Chris Garcia\\.gradle\\caches\\9.6.0\\transforms\\a3b298995f364be6939f75c9f03d3f86\\transformed\\appcompat-1.7.0\\res\\values-v18\\values-v18.xml",
+                    "source": "/tmp/cursor-sandbox-cache/410c7d2a347f11c76fa0a21dbbda24d4/gradle/caches/9.6.0/transforms/405d07ca3019f71d5245ed615ea20742/transformed/appcompat-1.7.0/res/values-v18/values-v18.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",

@@ -4,7 +4,9 @@ import android.app.*;
 import android.content.*;
 import android.database.*;
 import android.database.sqlite.*;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -13,8 +15,6 @@ import android.text.InputType;
 import android.view.*;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
-import com.google.zxing.integration.android.IntentIntegrator;
-import com.google.zxing.integration.android.IntentResult;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.text.*;
@@ -23,11 +23,12 @@ import java.util.*;
 public class MainActivity extends AppCompatActivity {
     StoreDb db;
     LinearLayout root, body;
-    String page = "Venta", scanMode = "sale";
+    String page = "Venta", saleQuery = "";
     LinkedHashMap<Long, Integer> cart = new LinkedHashMap<>();
     String pendingExport = "products";
     String inventoryFilter = "ALL";
     String searchQuery = "";
+    AlertDialog ratiosDialog;
 
     // Dark Theme Colors
     final int BG_DARK = 0xFF121214;
@@ -224,12 +225,21 @@ public class MainActivity extends AppCompatActivity {
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(20), dp(16), dp(20), dp(12));
 
+        LinearLayout titles = column();
+        TextView brand = new TextView(this);
+        brand.setText(StoreDb.STORE_NAME);
+        brand.setTextSize(13);
+        brand.setTextColor(PURPLE_LIGHT);
+        brand.setTypeface(Typeface.DEFAULT_BOLD);
+        titles.addView(brand);
+
         TextView title = new TextView(this);
         title.setText(p);
         title.setTextSize(26);
         title.setTextColor(TEXT_WHITE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        titles.addView(title);
+        header.addView(titles, new LinearLayout.LayoutParams(0, -2, 1));
 
         if (p.equals("Venta") && !cart.isEmpty()) {
             Button clearBtn = new Button(this);
@@ -313,22 +323,24 @@ public class MainActivity extends AppCompatActivity {
 
     // --- Módulo de Ventas ---
     void sale() {
-        LinearLayout scanBar = row();
-        scanBar.setPadding(0, 0, 0, dp(12));
+        EditText searchInput = input("Buscar producto, ej. Coca Cola grande", saleQuery);
+        LinearLayout catalog = column();
+        searchInput.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                saleQuery = s.toString().trim();
+                renderSaleCatalog(catalog);
+            }
+        });
+        add(body, searchInput);
 
-        Button scanBtn = secondaryButton("Escanear producto", () -> scan("sale"));
-        LinearLayout.LayoutParams scanLp = new LinearLayout.LayoutParams(0, -2, 1);
-        scanLp.setMargins(0, 0, dp(6), 0);
-        scanBtn.setLayoutParams(scanLp);
-
-        Button manualBtn = secondaryButton("Código manual", () -> manualCode("sale"));
-        LinearLayout.LayoutParams manualLp = new LinearLayout.LayoutParams(0, -2, 1);
-        manualLp.setMargins(dp(6), 0, 0, 0);
-        manualBtn.setLayoutParams(manualLp);
-
-        scanBar.addView(scanBtn);
-        scanBar.addView(manualBtn);
-        add(body, scanBar);
+        TextView hint = text("Toca un producto e indica la cantidad.", 13);
+        hint.setTextColor(TEXT_GRAY);
+        hint.setPadding(dp(4), 0, dp(4), dp(8));
+        add(body, hint);
+        add(body, catalog);
+        renderSaleCatalog(catalog);
 
         if (cart.isEmpty()) {
             LinearLayout emptyCard = cardView();
@@ -346,7 +358,7 @@ public class MainActivity extends AppCompatActivity {
             msg.setPadding(0, dp(12), 0, dp(4));
 
             TextView sub = new TextView(this);
-            sub.setText("Escanea el código de barras o ingresa un código manualmente para agregar productos.");
+            sub.setText("Busca el producto por nombre y elige la cantidad, por ejemplo 5 Coca Colas grandes.");
             sub.setTextSize(13);
             sub.setTextColor(TEXT_GRAY);
             sub.setGravity(Gravity.CENTER);
@@ -366,7 +378,7 @@ public class MainActivity extends AppCompatActivity {
             int qty = entry.getValue();
 
             try (Cursor c = db.getReadableDatabase().rawQuery(
-                    "SELECT name, price_cents, barcode FROM products WHERE id=?",
+                    "SELECT name, price_cents FROM products WHERE id=?",
                     new String[]{"" + pid})) {
 
                 if (c.moveToFirst()) {
@@ -487,145 +499,137 @@ public class MainActivity extends AppCompatActivity {
         show("Venta");
     }
 
-    void manualCode(String mode) {
-        EditText e = input("Código de barras", "");
+    void renderSaleCatalog(LinearLayout catalog) {
+        catalog.removeAllViews();
+        int count = 0;
+        try (Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT id, name, price_cents, stock, min_stock FROM products WHERE active=1 AND kind='PRODUCT' ORDER BY name",
+                null)) {
+            while (c.moveToNext()) {
+                long id = c.getLong(0);
+                String name = c.getString(1);
+                if (!saleQuery.isEmpty() && !name.toLowerCase(Locale.US).contains(saleQuery.toLowerCase(Locale.US))) {
+                    continue;
+                }
+                long price = c.getLong(2);
+                int stock = c.getInt(3);
+                int minStock = c.getInt(4);
+                count++;
+
+                LinearLayout itemCard = cardView();
+                LinearLayout itemRow = row();
+                itemRow.setGravity(Gravity.CENTER_VERTICAL);
+
+                LinearLayout imgBox = column();
+                imgBox.setGravity(Gravity.CENTER);
+                imgBox.setBackground(roundedBg(PURPLE_CONTAINER, 12));
+                imgBox.addView(iconView(R.drawable.ic_box, PURPLE_PRIMARY, 22));
+                LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(dp(44), dp(44));
+                imgLp.setMargins(0, 0, dp(12), 0);
+                itemRow.addView(imgBox, imgLp);
+
+                LinearLayout details = column();
+                TextView nameTxt = new TextView(this);
+                nameTxt.setText(name);
+                nameTxt.setTextSize(15);
+                nameTxt.setTextColor(TEXT_WHITE);
+                nameTxt.setTypeface(Typeface.DEFAULT_BOLD);
+                TextView priceTxt = new TextView(this);
+                priceTxt.setText(money(price));
+                priceTxt.setTextSize(13);
+                priceTxt.setTextColor(TEXT_GRAY);
+                details.addView(nameTxt);
+                details.addView(priceTxt);
+                itemRow.addView(details, new LinearLayout.LayoutParams(0, -2, 1));
+                itemRow.addView(stockBadge(stock, minStock));
+                itemCard.addView(itemRow);
+                itemCard.setOnClickListener(v -> askQuantity(id, name, price, stock));
+                catalog.addView(itemCard);
+            }
+        }
+        if (count == 0) {
+            TextView empty = text(saleQuery.isEmpty()
+                    ? "Todavía no hay productos de venta. Agrégalos en Inventario."
+                    : "No se encontró ese producto.", 14);
+            empty.setTextColor(TEXT_GRAY);
+            catalog.addView(empty);
+        }
+    }
+
+    void askQuantity(long id, String name, long price, int stock) {
+        if (stock <= 0) {
+            toast("Sin existencias de " + name);
+            return;
+        }
         LinearLayout dialogLayout = column();
-        dialogLayout.setPadding(dp(16), dp(16), dp(16), dp(16));
+        dialogLayout.setPadding(dp(20), dp(20), dp(20), dp(20));
         dialogLayout.setBackgroundColor(BG_DARK);
 
-        TextView t = text("Buscar por código de barras", 18);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
-        t.setPadding(0, 0, 0, dp(12));
-        dialogLayout.addView(t);
-        dialogLayout.addView(e);
+        TextView title = new TextView(this);
+        title.setText(name);
+        title.setTextSize(20);
+        title.setTextColor(TEXT_WHITE);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        dialogLayout.addView(title);
+
+        TextView pMeta = new TextView(this);
+        pMeta.setText("Precio: " + money(price) + "  •  Stock: " + stock);
+        pMeta.setTextColor(TEXT_GRAY);
+        pMeta.setTextSize(13);
+        pMeta.setPadding(0, dp(4), 0, dp(8));
+        dialogLayout.addView(pMeta);
+
+        TextView qLabel = text("Cantidad:", 15);
+        qLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        qLabel.setPadding(0, dp(8), 0, dp(8));
+        dialogLayout.addView(qLabel);
+
+        EditText qtyInput = input("", "1");
+        qtyInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        qtyInput.setTextSize(22);
+        qtyInput.setGravity(Gravity.CENTER);
+        dialogLayout.addView(qtyInput);
+
+        LinearLayout quickRow = row();
+        quickRow.setPadding(0, dp(4), 0, dp(12));
+        for (int num : new int[]{1, 2, 3, 5}) {
+            Button btn = new Button(this);
+            btn.setText(String.valueOf(num));
+            btn.setTextSize(14);
+            btn.setTextColor(TEXT_WHITE);
+            btn.setBackground(roundedBg(CARD_DARK, 10));
+            btn.setOnClickListener(v -> qtyInput.setText(String.valueOf(num)));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+            lp.setMargins(dp(2), 0, dp(2), 0);
+            quickRow.addView(btn, lp);
+        }
+        dialogLayout.addView(quickRow);
 
         new AlertDialog.Builder(this)
             .setView(dialogLayout)
             .setNegativeButton("Cancelar", null)
-            .setPositiveButton("Buscar", (d, w) -> onCode(e.getText().toString().trim(), mode))
+            .setPositiveButton("Agregar al carrito", (d, w) -> {
+                try {
+                    int n = Integer.parseInt(qtyInput.getText().toString().trim());
+                    if (n <= 0 || n + cart.getOrDefault(id, 0) > stock) {
+                        throw new IllegalArgumentException("Cantidad inválida o superior al stock disponible (" + stock + ")");
+                    }
+                    cart.put(id, cart.getOrDefault(id, 0) + n);
+                    show("Venta");
+                } catch (Exception ex) {
+                    error(ex);
+                }
+            })
             .show();
-    }
-
-    void scan(String mode) {
-        scanMode = mode;
-        new IntentIntegrator(this)
-            .setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES)
-            .setPrompt("Escanea el código de barras del producto")
-            .setBeepEnabled(false)
-            .setOrientationLocked(false)
-            .initiateScan();
     }
 
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
         super.onActivityResult(req, result, data);
-        IntentResult r = IntentIntegrator.parseActivityResult(req, result, data);
-        if (r != null && r.getContents() != null) {
-            onCode(r.getContents(), scanMode);
-        } else if (req == 201 && result == RESULT_OK && data != null) {
+        if (req == 201 && result == RESULT_OK && data != null) {
             importCsv(data.getData());
         } else if (req == 202 && result == RESULT_OK && data != null) {
             exportData(data.getData());
-        }
-    }
-
-    void onCode(String code, String mode) {
-        try (Cursor c = db.getReadableDatabase().rawQuery(
-                "SELECT id, name, price_cents, stock, kind FROM products WHERE barcode=? AND active=1",
-                new String[]{code})) {
-
-            if (!c.moveToFirst()) {
-                new AlertDialog.Builder(this)
-                    .setTitle("Código no registrado")
-                    .setMessage("Código: " + code + "\n\n¿Deseas registrar este nuevo producto?")
-                    .setPositiveButton("Crear producto", (d, w) -> productForm(0, code))
-                    .setNegativeButton("Cancelar", null)
-                    .show();
-                return;
-            }
-
-            long id = c.getLong(0);
-            String name = c.getString(1);
-            long price = c.getLong(2);
-            int stock = c.getInt(3);
-
-            if (mode.equals("inventory")) {
-                productForm(id, code);
-                return;
-            }
-
-            if (!"PRODUCT".equals(c.getString(4))) {
-                toast("Este registro es un bien de la tienda, no un producto de venta.");
-                return;
-            }
-
-            // Custom Dialog "Solicitar Cantidad"
-            LinearLayout dialogLayout = column();
-            dialogLayout.setPadding(dp(20), dp(20), dp(20), dp(20));
-            dialogLayout.setBackgroundColor(BG_DARK);
-
-            TextView title = new TextView(this);
-            title.setText("Producto detectado");
-            title.setTextSize(20);
-            title.setTextColor(TEXT_WHITE);
-            title.setTypeface(Typeface.DEFAULT_BOLD);
-            dialogLayout.addView(title);
-
-            // Card details
-            LinearLayout pCard = cardView();
-            TextView pName = text(name, 16);
-            pName.setTypeface(Typeface.DEFAULT_BOLD);
-            TextView pMeta = new TextView(this);
-            pMeta.setText("Código: " + code + "  •  Precio: " + money(price) + "  •  Stock: " + stock);
-            pMeta.setTextColor(TEXT_GRAY);
-            pMeta.setTextSize(13);
-            pCard.addView(pName);
-            pCard.addView(pMeta);
-            dialogLayout.addView(pCard);
-
-            TextView qLabel = text("Cantidad:", 15);
-            qLabel.setTypeface(Typeface.DEFAULT_BOLD);
-            qLabel.setPadding(0, dp(8), 0, dp(8));
-            dialogLayout.addView(qLabel);
-
-            // Quick quantity selector row
-            EditText qtyInput = input("", "1");
-            qtyInput.setInputType(InputType.TYPE_CLASS_NUMBER);
-            qtyInput.setTextSize(22);
-            qtyInput.setGravity(Gravity.CENTER);
-            dialogLayout.addView(qtyInput);
-
-            LinearLayout quickRow = row();
-            quickRow.setPadding(0, dp(4), 0, dp(12));
-            for (int num : new int[]{1, 2, 3, 5}) {
-                Button btn = new Button(this);
-                btn.setText(String.valueOf(num));
-                btn.setTextSize(14);
-                btn.setTextColor(TEXT_WHITE);
-                btn.setBackground(roundedBg(CARD_DARK, 10));
-                btn.setOnClickListener(v -> qtyInput.setText(String.valueOf(num)));
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
-                lp.setMargins(dp(2), 0, dp(2), 0);
-                quickRow.addView(btn, lp);
-            }
-            dialogLayout.addView(quickRow);
-
-            new AlertDialog.Builder(this)
-                .setView(dialogLayout)
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Agregar al carrito", (d, w) -> {
-                    try {
-                        int n = Integer.parseInt(qtyInput.getText().toString().trim());
-                        if (n <= 0 || n + cart.getOrDefault(id, 0) > stock) {
-                            throw new IllegalArgumentException("Cantidad inválida o superior al stock disponible (" + stock + ")");
-                        }
-                        cart.put(id, cart.getOrDefault(id, 0) + n);
-                        show("Venta");
-                    } catch (Exception ex) {
-                        error(ex);
-                    }
-                })
-                .show();
         }
     }
 
@@ -667,15 +671,79 @@ public class MainActivity extends AppCompatActivity {
             .setNegativeButton("Cancelar", null)
             .setPositiveButton("Guardar venta", (d, w) -> {
                 try {
-                    long id = db.checkout(cart, methods[methodSpinner.getSelectedItemPosition()], noteInput.getText().toString());
+                    String method = methods[methodSpinner.getSelectedItemPosition()];
+                    long id = db.checkout(cart, method, noteInput.getText().toString());
                     cart.clear();
                     show("Venta");
-                    toast("Venta #" + id + " registrada con éxito");
+                    showReceipt(id, method);
                 } catch (Exception ex) {
                     error(ex);
                 }
             })
             .show();
+    }
+
+    void showReceipt(long id, String method) {
+        StringBuilder b = new StringBuilder();
+        long total = 0;
+        String when = "";
+        try (Cursor sale = db.getReadableDatabase().rawQuery(
+                "SELECT created_at, total_cents, COALESCE(notes,'') FROM sales WHERE id=?",
+                new String[]{"" + id})) {
+            if (sale.moveToFirst()) {
+                when = sale.getString(0);
+                total = sale.getLong(1);
+            }
+        }
+        try (Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT p.name, si.quantity, si.unit_price_cents FROM sale_items si JOIN products p ON p.id=si.product_id WHERE si.sale_id=?",
+                new String[]{"" + id})) {
+            while (c.moveToNext()) {
+                b.append("• ").append(c.getString(0))
+                        .append(" × ").append(c.getInt(1))
+                        .append(" = ").append(money(c.getLong(1) * c.getLong(2)))
+                        .append("\n");
+            }
+        }
+
+        LinearLayout layout = column();
+        layout.setPadding(dp(20), dp(20), dp(20), dp(20));
+        layout.setBackgroundColor(BG_DARK);
+
+        TextView brand = text(StoreDb.STORE_NAME, 18);
+        brand.setTypeface(Typeface.DEFAULT_BOLD);
+        brand.setTextColor(PURPLE_LIGHT);
+        brand.setGravity(Gravity.CENTER);
+        layout.addView(brand);
+
+        TextView title = text("Ticket de venta #" + id, 16);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, 0, 0, dp(8));
+        layout.addView(title);
+
+        TextView meta = text(when + "\nPago: " + method, 13);
+        meta.setTextColor(TEXT_GRAY);
+        meta.setGravity(Gravity.CENTER);
+        layout.addView(meta);
+
+        TextView items = text(b.length() == 0 ? "Sin artículos" : b.toString(), 14);
+        items.setLineSpacing(0, 1.25f);
+        layout.addView(items);
+
+        TextView totalTxt = text("Total: " + money(total), 20);
+        totalTxt.setTypeface(Typeface.DEFAULT_BOLD);
+        totalTxt.setPadding(0, dp(8), 0, 0);
+        layout.addView(totalTxt);
+
+        TextView thanks = text("Gracias por su compra", 13);
+        thanks.setTextColor(TEXT_GRAY);
+        thanks.setGravity(Gravity.CENTER);
+        layout.addView(thanks);
+
+        new AlertDialog.Builder(this)
+                .setView(layout)
+                .setPositiveButton("Listo", null)
+                .show();
     }
 
     // --- Módulo de Historial ---
@@ -772,6 +840,11 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout dialogLayout = column();
         dialogLayout.setPadding(dp(20), dp(20), dp(20), dp(20));
         dialogLayout.setBackgroundColor(BG_DARK);
+
+        TextView brand = text(StoreDb.STORE_NAME, 13);
+        brand.setTextColor(PURPLE_LIGHT);
+        brand.setTypeface(Typeface.DEFAULT_BOLD);
+        dialogLayout.addView(brand);
 
         TextView title = text("Detalle de Venta #" + id, 20);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -955,130 +1028,310 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void chartDialog(int mode) {
-        String fmt = mode == 0 ? "%H" : mode == 1 || mode == 2 ? "%Y-%m-%d" : "%Y-%m";
+        String[] titles = {"Ventas de hoy por hora", "Ventas de los últimos 7 días", "Ventas de los últimos 30 días", "Ventas de los últimos 12 meses"};
+        List<String> labels = new ArrayList<>();
+        List<Long> values = new ArrayList<>();
+        String fmt = mode == 0 ? "%H" : mode == 3 ? "%Y-%m" : "%Y-%m-%d";
         String filter = mode == 0 ? "date(created_at)=date('now','localtime')" :
-                        mode == 1 ? "date(created_at)>=date('now','localtime','-6 days')" :
-                        mode == 2 ? "date(created_at)>=date('now','localtime','-29 days')" :
+                mode == 1 ? "date(created_at)>=date('now','localtime','-6 days')" :
+                mode == 2 ? "date(created_at)>=date('now','localtime','-29 days')" :
                         "date(created_at)>=date('now','localtime','-11 months','start of month')";
+        Map<String, Long> amounts = new HashMap<>();
+        try (Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT strftime(?, created_at), COALESCE(SUM(total_cents),0) FROM sales WHERE " + filter + " GROUP BY 1",
+                new String[]{fmt})) {
+            while (c.moveToNext()) amounts.put(c.getString(0), c.getLong(1));
+        }
 
-        String sql = "SELECT strftime('" + fmt + "',created_at) period, SUM(total_cents) amount FROM sales WHERE " + filter + " GROUP BY period ORDER BY period";
-        StringBuilder out = new StringBuilder();
-        long max = db.scalar("SELECT COALESCE(MAX(v),0) FROM (SELECT SUM(total_cents) v FROM sales WHERE " + filter + " GROUP BY strftime('" + fmt + "',created_at))");
+        Calendar cal = Calendar.getInstance();
+        SimpleDateFormat keyFmt = new SimpleDateFormat(mode == 0 ? "HH" : mode == 3 ? "yyyy-MM" : "yyyy-MM-dd", Locale.US);
+        SimpleDateFormat labelFmt = new SimpleDateFormat(mode == 0 ? "HH" : mode == 3 ? "MM/yy" : "dd/MM", Locale.US);
+        int steps = mode == 0 ? 24 : mode == 1 ? 7 : mode == 2 ? 30 : 12;
+        int labelStep = mode == 0 ? 3 : mode == 2 ? 5 : 1;
+        if (mode == 0) cal.set(Calendar.HOUR_OF_DAY, 0);
+        else if (mode == 3) {
+            cal.set(Calendar.DAY_OF_MONTH, 1);
+            cal.add(Calendar.MONTH, -(steps - 1));
+        } else cal.add(Calendar.DAY_OF_MONTH, -(steps - 1));
 
-        try (Cursor c = db.getReadableDatabase().rawQuery(sql, null)) {
-            while (c.moveToNext()) {
-                long n = c.getLong(1);
-                int bars = max == 0 ? 0 : (int) (n * 16 / max);
-                out.append(c.getString(0)).append("  ")
-                   .append("▮".repeat(bars)).append("  ")
-                   .append(money(n)).append("\n");
-            }
+        long total = 0;
+        for (int i = 0; i < steps; i++) {
+            String key = keyFmt.format(cal.getTime());
+            long amount = amounts.getOrDefault(key, 0L);
+            labels.add(labelFmt.format(cal.getTime()));
+            values.add(amount);
+            total += amount;
+            if (mode == 0) cal.add(Calendar.HOUR_OF_DAY, 1);
+            else if (mode == 3) cal.add(Calendar.MONTH, 1);
+            else cal.add(Calendar.DAY_OF_MONTH, 1);
         }
 
         LinearLayout layout = column();
-        layout.setPadding(dp(20), dp(20), dp(20), dp(20));
+        layout.setPadding(dp(16), dp(16), dp(16), dp(16));
         layout.setBackgroundColor(BG_DARK);
 
-        TextView title = text("Gráfica: " + new String[]{"Hora", "Semana", "Mes", "Año"}[mode], 18);
+        TextView title = text(titles[mode], 18);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(0, 0, 0, dp(12));
         layout.addView(title);
+        TextView sum = text("Total del período: " + money(total), 13);
+        sum.setTextColor(TEXT_GRAY);
+        sum.setPadding(dp(4), 0, dp(4), dp(8));
+        layout.addView(sum);
 
-        TextView chartTxt = text(out.length() == 0 ? "Sin ventas en este período" : out.toString(), 14);
-        chartTxt.setLineSpacing(0, 1.3f);
-        layout.addView(chartTxt);
+        if (total == 0) {
+            layout.addView(text("Sin ventas en este período", 14));
+        } else {
+            BarChartView chart = new BarChartView(this, labels, values, labelStep);
+            layout.addView(chart, new LinearLayout.LayoutParams(-1, dp(240)));
+        }
 
         new AlertDialog.Builder(this)
-            .setView(layout)
-            .setPositiveButton("Cerrar", null)
-            .show();
+                .setView(layout)
+                .setPositiveButton("Cerrar", null)
+                .show();
     }
 
     void ratios() {
-        LinearLayout layout = column();
-        layout.setPadding(dp(20), dp(20), dp(20), dp(20));
-        layout.setBackgroundColor(BG_DARK);
+        showRatios(false);
+    }
 
-        TextView title = text("Razones Financieras", 20);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(0, 0, 0, dp(12));
-        layout.addView(title);
+    void showRatios(boolean year) {
+        if (ratiosDialog != null) ratiosDialog.dismiss();
+        String salesWhere = year
+                ? "strftime('%Y', created_at)=strftime('%Y','now','localtime')"
+                : "strftime('%Y-%m', created_at)=strftime('%Y-%m','now','localtime')";
+        String expenseWhere = year
+                ? "strftime('%Y', date)=strftime('%Y','now','localtime')"
+                : "strftime('%Y-%m', date)=strftime('%Y-%m','now','localtime')";
+        long revenue = db.scalar("SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE " + salesWhere);
+        long cogs = db.scalar("SELECT COALESCE(SUM(si.quantity * si.unit_cost_cents),0) FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE " + salesWhere.replace("created_at", "s.created_at"));
+        long expenses = db.scalar("SELECT COALESCE(SUM(amount_cents),0) FROM expenses WHERE " + expenseWhere);
+        long net = revenue - cogs - expenses;
+        long cash = db.scalar("SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE payment_method='Efectivo'")
+                - db.scalar("SELECT COALESCE(SUM(amount_cents),0) FROM expenses");
+        long inventoryValue = db.scalar("SELECT COALESCE(SUM(stock * cost_cents),0) FROM products WHERE active=1 AND kind='PRODUCT'");
+        long fixedAssets = db.scalar("SELECT COALESCE(SUM(value_cents),0) FROM assets");
+        long payables = db.payables();
+        long currentAssets = cash + inventoryValue;
+        long totalAssets = currentAssets + fixedAssets;
+        long equity = totalAssets - payables;
 
         String[][] indicators = {
-            {"1. Liquidez Corriente", "1.85", "Buena", "GREEN"},
-            {"2. Endeudamiento", "0.42", "Saludable", "GREEN"},
-            {"3. Rentabilidad (ROA)", "12.6%", "Buena", "GREEN"},
-            {"4. Prueba Ácida", "1.25", "Adecuada", "GREEN"},
-            {"5. Capital de Trabajo", "$4,520.00", "Positivo", "GREEN"},
-            {"6. Rotación de Activos", "2.18", "Eficiente", "GREEN"},
-            {"7. Rotación Proveedores", "6.35", "Normal", "AMBER"},
-            {"8. Autonomía Financiera", "1.38", "Buena", "GREEN"}
+                ratioRow("1. Liquidez corriente", divide(currentAssets, payables), "Saldo actual. Caja + inventario / cuentas por pagar", 1.5, 1.0, true, "Buena", "Aceptable", "Baja", false),
+                ratioRow("2. Endeudamiento", divide(payables, totalAssets), "Pasivo / activo total", 0.5, 0.7, false, "Saludable", "Moderado", "Alto", false),
+                ratioRow("3. Rentabilidad (ROA)", totalAssets == 0 ? null : (double) net / totalAssets, "Utilidad neta del período / activo total", 0.05, 0.0, true, "Buena", "Moderada", "Baja", true),
+                ratioRow("4. Prueba ácida", divide(cash, payables), "Caja / cuentas por pagar", 1.0, 0.8, true, "Adecuada", "Ajustada", "Baja", false),
+                moneyRow("5. Capital de trabajo", currentAssets - payables, "Caja + inventario − cuentas por pagar"),
+                ratioRow("6. Rotación de activos", totalAssets == 0 ? null : (double) revenue / totalAssets, "Ventas del período / activo total", 1.0, 0.5, true, "Eficiente", "Moderada", "Baja", false),
+                ratioRow("7. Rotación de proveedores", divide(cogs, payables), "Costo de ventas / cuentas por pagar", 4.0, 2.0, true, "Ágil", "Normal", "Lenta", false),
+                ratioRow("8. Autonomía financiera", payables == 0 ? null : (double) equity / payables, payables == 0 ? "Sin deuda registrada" : "Patrimonio / pasivo", 1.0, 0.5, true, "Buena", "Ajustada", "Baja", false)
         };
+        if (payables == 0) {
+            indicators[0][1] = "—";
+            indicators[0][2] = "Sin pasivo";
+            indicators[0][3] = "GREEN";
+            indicators[3][1] = "—";
+            indicators[3][2] = "Sin pasivo";
+            indicators[3][3] = "GREEN";
+            indicators[6][1] = "—";
+            indicators[6][2] = "Sin cuentas por pagar";
+            indicators[6][3] = "AMBER";
+            indicators[7][1] = equity >= 0 ? "Sin deuda" : "—";
+            indicators[7][2] = "Patrimonio " + money(equity);
+            indicators[7][3] = equity >= 0 ? "GREEN" : "RED";
+        }
+
+        LinearLayout layout = column();
+        layout.setPadding(dp(16), dp(16), dp(16), dp(12));
+        layout.setBackgroundColor(BG_DARK);
+
+        TextView title = text("Razones financieras", 20);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        layout.addView(title);
+        TextView period = text((year ? "Año en curso" : "Mes en curso") + " · " + StoreDb.STORE_NAME, 12);
+        period.setTextColor(TEXT_GRAY);
+        layout.addView(period);
+
+        LinearLayout toggle = row();
+        toggle.setPadding(0, dp(8), 0, dp(4));
+        Button monthBtn = periodButton("Mes", !year);
+        Button yearBtn = periodButton("Año", year);
+        monthBtn.setOnClickListener(v -> showRatios(false));
+        yearBtn.setOnClickListener(v -> showRatios(true));
+        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, -2, 1);
+        half.setMargins(0, 0, dp(4), 0);
+        LinearLayout.LayoutParams halfR = new LinearLayout.LayoutParams(0, -2, 1);
+        halfR.setMargins(dp(4), 0, 0, 0);
+        toggle.addView(monthBtn, half);
+        toggle.addView(yearBtn, halfR);
+        layout.addView(toggle);
+
+        TextView summary = text("Ventas " + money(revenue) + "  ·  Utilidad " + money(net) + "\nCaja " + money(cash) + "  ·  Inventario " + money(inventoryValue), 12);
+        summary.setTextColor(TEXT_GRAY);
+        summary.setPadding(dp(4), dp(4), dp(4), dp(8));
+        layout.addView(summary);
 
         ScrollView sc = new ScrollView(this);
         LinearLayout list = column();
-
         for (String[] ind : indicators) {
-            LinearLayout c = cardView();
+            LinearLayout card = cardView();
             LinearLayout r = row();
             r.setGravity(Gravity.CENTER_VERTICAL);
-
             LinearLayout col = column();
             TextView name = text(ind[0], 14);
             name.setTypeface(Typeface.DEFAULT_BOLD);
-            TextView val = text("Valor calculado: " + ind[1], 12);
+            TextView val = text(ind[1], 13);
             val.setTextColor(TEXT_GRAY);
+            TextView hint = text(ind[4], 11);
+            hint.setTextColor(TEXT_GRAY);
             col.addView(name);
             col.addView(val);
-
+            col.addView(hint);
             r.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
-
-            int badgeBg = ind[3].equals("GREEN") ? BADGE_GREEN_BG : BADGE_AMBER_BG;
-            int badgeTxt = ind[3].equals("GREEN") ? BADGE_GREEN_TXT : BADGE_AMBER_TXT;
-            r.addView(statusBadge(ind[2], badgeBg, badgeTxt));
-
-            c.addView(r);
-            list.addView(c);
+            int bg = "RED".equals(ind[3]) ? BADGE_RED_BG : "AMBER".equals(ind[3]) ? BADGE_AMBER_BG : BADGE_GREEN_BG;
+            int fg = "RED".equals(ind[3]) ? BADGE_RED_TXT : "AMBER".equals(ind[3]) ? BADGE_AMBER_TXT : BADGE_GREEN_TXT;
+            r.addView(statusBadge(ind[2], bg, fg));
+            card.addView(r);
+            list.addView(card);
         }
-
         sc.addView(list);
-        layout.addView(sc, new LinearLayout.LayoutParams(-1, dp(320)));
+        layout.addView(sc, new LinearLayout.LayoutParams(-1, dp(280)));
 
+        Button expenseBtn = secondaryButton("Registrar gasto", () -> expenseForm(year));
+        Button debtBtn = secondaryButton("Cuentas por pagar: " + money(payables), () -> payablesForm(year));
+        layout.addView(expenseBtn);
+        layout.addView(debtBtn);
+
+        ratiosDialog = new AlertDialog.Builder(this)
+                .setView(layout)
+                .setPositiveButton("Cerrar", null)
+                .create();
+        ratiosDialog.show();
+    }
+
+    Button periodButton(String label, boolean selected) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextSize(13);
+        if (selected) {
+            b.setTextColor(TEXT_WHITE);
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setBackground(roundedBg(PURPLE_PRIMARY, 12));
+        } else {
+            b.setTextColor(TEXT_GRAY);
+            b.setBackground(roundedBorderBg(CARD_DARK, CARD_BORDER, 1, 12));
+        }
+        return b;
+    }
+
+    String[] ratioRow(String name, Double value, String hint, double good, double mid, boolean higherBetter, String goodLabel, String midLabel, String badLabel, boolean percent) {
+        if (value == null || value.isNaN() || value.isInfinite()) {
+            return new String[]{name, "—", "Sin base", "AMBER", hint};
+        }
+        String shown = percent
+                ? String.format(Locale.US, "%.1f%%", value * 100)
+                : String.format(Locale.US, "%.2f", value);
+        String status;
+        String tone;
+        if (higherBetter) {
+            if (value >= good) { status = goodLabel; tone = "GREEN"; }
+            else if (value >= mid) { status = midLabel; tone = "AMBER"; }
+            else { status = badLabel; tone = "RED"; }
+        } else if (value <= good) {
+            status = goodLabel; tone = "GREEN";
+        } else if (value <= mid) {
+            status = midLabel; tone = "AMBER";
+        } else {
+            status = badLabel; tone = "RED";
+        }
+        return new String[]{name, shown, status, tone, hint};
+    }
+
+    String[] moneyRow(String name, long cents, String hint) {
+        String tone = cents > 0 ? "GREEN" : cents == 0 ? "AMBER" : "RED";
+        String status = cents > 0 ? "Positivo" : cents == 0 ? "En cero" : "Negativo";
+        return new String[]{name, money(cents), status, tone, hint};
+    }
+
+    Double divide(long numerator, long denominator) {
+        if (denominator == 0) return null;
+        return (double) numerator / denominator;
+    }
+
+    void expenseForm(boolean year) {
+        EditText desc = input("Descripción", "");
+        EditText amount = input("Monto", "0.00");
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+        EditText date = input("Fecha AAAA-MM-DD", today);
+        LinearLayout form = column();
+        form.setPadding(dp(16), dp(16), dp(16), dp(16));
+        form.setBackgroundColor(BG_DARK);
+        TextView title = text("Registrar gasto", 18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        form.addView(title);
+        form.addView(desc);
+        form.addView(amount);
+        form.addView(date);
         new AlertDialog.Builder(this)
-            .setView(layout)
-            .setPositiveButton("Entendido", null)
-            .show();
+                .setView(form)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar", (d, w) -> {
+                    try {
+                        db.addExpense(desc.getText().toString(), cents(amount.getText().toString()), date.getText().toString().trim());
+                        toast("Gasto registrado");
+                        showRatios(year);
+                    } catch (Exception ex) {
+                        error(ex);
+                    }
+                })
+                .show();
+    }
+
+    void payablesForm(boolean year) {
+        EditText amount = input("Saldo de cuentas por pagar", String.format(Locale.US, "%.2f", db.payables() / 100.0));
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        LinearLayout form = column();
+        form.setPadding(dp(16), dp(16), dp(16), dp(16));
+        form.setBackgroundColor(BG_DARK);
+        TextView title = text("Cuentas por pagar", 18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        form.addView(title);
+        TextView hint = text("Este saldo se usa para liquidez, endeudamiento y autonomía.", 12);
+        hint.setTextColor(TEXT_GRAY);
+        form.addView(hint);
+        form.addView(amount);
+        new AlertDialog.Builder(this)
+                .setView(form)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar", (d, w) -> {
+                    try {
+                        long value = cents(amount.getText().toString());
+                        if (value < 0) throw new IllegalArgumentException("El saldo no puede ser negativo");
+                        db.setSetting("payables_cents", String.valueOf(value));
+                        showRatios(year);
+                    } catch (Exception ex) {
+                        error(ex);
+                    }
+                })
+                .show();
     }
 
     // --- Módulo de Inventario ---
     void inventory() {
-        // Search & Scan Bar
-        LinearLayout searchBar = row();
-        searchBar.setGravity(Gravity.CENTER_VERTICAL);
-        searchBar.setPadding(0, 0, 0, dp(8));
-
-        EditText searchInput = input("Buscar producto o código...", searchQuery);
+        LinearLayout productList = column();
+        EditText searchInput = input("Buscar producto...", searchQuery);
         searchInput.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
                 searchQuery = s.toString().trim();
+                renderProducts(productList);
             }
-            @Override public void afterTextChanged(android.text.Editable s) {}
         });
 
-        LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(0, -2, 1);
-        searchLp.setMargins(0, 0, dp(8), 0);
-        searchInput.setLayoutParams(searchLp);
-        searchBar.addView(searchInput);
-
-        LinearLayout scanBtnContainer = column();
-        scanBtnContainer.setGravity(Gravity.CENTER);
-        scanBtnContainer.setBackground(roundedBg(PURPLE_PRIMARY, 12));
-        scanBtnContainer.addView(iconView(R.drawable.ic_scan, TEXT_WHITE, 20));
-        scanBtnContainer.setOnClickListener(v -> scan("inventory"));
-        searchBar.addView(scanBtnContainer, new LinearLayout.LayoutParams(dp(44), dp(44)));
-
-        add(body, searchBar);
+        add(body, searchInput);
 
         // Filter Chips (Horizontal Scroll)
         HorizontalScrollView chipScroll = new HorizontalScrollView(this);
@@ -1130,7 +1383,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout actionRow = row();
         actionRow.setPadding(0, 0, 0, dp(12));
 
-        Button addBtn = primaryButton("+ Producto", () -> productForm(0, ""));
+        Button addBtn = primaryButton("+ Producto", () -> productForm(0));
         LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(0, -2, 1);
         addLp.setMargins(0, 0, dp(4), 0);
         addBtn.setLayoutParams(addLp);
@@ -1149,21 +1402,25 @@ public class MainActivity extends AppCompatActivity {
         actionRow.addView(tagsBtn);
         actionRow.addView(dataBtn);
         add(body, actionRow);
+        add(body, productList);
+        renderProducts(productList);
+    }
 
-        // Product Cards List
+    void renderProducts(LinearLayout productList) {
+        productList.removeAllViews();
         try (Cursor c = db.products()) {
             int count = 0;
             while (c.moveToNext()) {
                 long id = c.getLong(0);
-                String barcode = c.getString(1);
                 String name = c.getString(2);
                 long price = c.getLong(3);
                 int stock = c.getInt(5);
                 int minStock = c.getInt(6);
                 String exp = c.getString(7);
+                int alertDays = c.getInt(11);
 
                 // Apply Filters
-                if (!searchQuery.isEmpty() && !name.toLowerCase().contains(searchQuery.toLowerCase()) && !barcode.contains(searchQuery)) {
+                if (!searchQuery.isEmpty() && !name.toLowerCase(Locale.US).contains(searchQuery.toLowerCase(Locale.US))) {
                     continue;
                 }
                 if (inventoryFilter.equals("IN_STOCK") && stock <= minStock) continue;
@@ -1196,17 +1453,18 @@ public class MainActivity extends AppCompatActivity {
                 nameTxt.setTypeface(Typeface.DEFAULT_BOLD);
 
                 TextView codeTxt = new TextView(this);
-                codeTxt.setText("Cód: " + barcode + "  •  " + money(price));
+                codeTxt.setText(money(price));
                 codeTxt.setTextSize(13);
                 codeTxt.setTextColor(TEXT_GRAY);
 
                 details.addView(nameTxt);
                 details.addView(codeTxt);
+                String expState = expirationStatus(exp, alertDays);
                 if (exp != null && !exp.isEmpty()) {
                     TextView expTxt = new TextView(this);
-                    expTxt.setText("Vence: " + exp);
+                    expTxt.setText(expState == null ? "Vence: " + exp : expState + " · " + exp);
                     expTxt.setTextSize(11);
-                    expTxt.setTextColor(BADGE_AMBER_TXT);
+                    expTxt.setTextColor("Vencido".equals(expState) ? BADGE_RED_TXT : BADGE_AMBER_TXT);
                     details.addView(expTxt);
                 }
 
@@ -1214,7 +1472,7 @@ public class MainActivity extends AppCompatActivity {
                 itemRow.addView(stockBadge(stock, minStock));
 
                 itemCard.addView(itemRow);
-                add(body, itemCard);
+                productList.addView(itemCard);
             }
 
             if (count == 0) {
@@ -1229,9 +1487,23 @@ public class MainActivity extends AppCompatActivity {
                 msg.setGravity(Gravity.CENTER);
 
                 emptyCard.addView(msg);
-                add(body, emptyCard);
+                productList.addView(emptyCard);
             }
         }
+    }
+
+    String expirationStatus(String exp, int alertDays) {
+        if (exp == null || exp.isEmpty()) return null;
+        try {
+            Date date = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(exp);
+            if (date == null) return null;
+            long days = (date.getTime() - System.currentTimeMillis()) / 86_400_000L;
+            if (days < 0) return "Vencido";
+            if (days <= alertDays) return "Por vencer";
+        } catch (ParseException ignored) {
+            return null;
+        }
+        return null;
     }
 
     void inventoryMoreMenu() {
@@ -1247,15 +1519,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void productOptions(long id) {
-        String[] opts = {"Editar producto", "Asignar etiquetas", "Ajustar stock", "Historial de movimientos", "Archivar producto"};
+        String[] opts = {"Editar producto", "Asignar etiquetas", "Ajustar stock", "Historial de movimientos", "Lotes y vencimiento", "Archivar producto"};
         new AlertDialog.Builder(this)
             .setTitle("Opciones de Producto")
             .setItems(opts, (d, n) -> {
-                if (n == 0) productForm(id, "");
+                if (n == 0) productForm(id);
                 if (n == 1) assignTags(id);
                 if (n == 2) adjustForm(id);
                 if (n == 3) movements(id);
-                if (n == 4) {
+                if (n == 4) lotsScreen(id);
+                if (n == 5) {
                     new AlertDialog.Builder(this)
                         .setTitle("¿Archivar producto?")
                         .setMessage("El producto no se mostrará en inventario ni ventas, pero se conservará su historial.")
@@ -1268,6 +1541,98 @@ public class MainActivity extends AppCompatActivity {
                 }
             })
             .show();
+    }
+
+    void lotsScreen(long productId) {
+        String productName = "Producto";
+        try (Cursor c = db.getReadableDatabase().rawQuery("SELECT name FROM products WHERE id=?", new String[]{"" + productId})) {
+            if (c.moveToFirst()) productName = c.getString(0);
+        }
+        body.removeAllViews();
+        add(body, secondaryButton("← Volver a Inventario", () -> show("Inventario")));
+        TextView heading = text(productName, 18);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        add(body, heading);
+        TextView hint = text("Al vender se descuenta primero el lote que vence antes.", 12);
+        hint.setTextColor(TEXT_GRAY);
+        add(body, hint);
+        long pid = productId;
+        add(body, primaryButton("+ Agregar lote", () -> lotForm(0, pid, "", "", "0")));
+
+        try (Cursor c = db.lots(productId)) {
+            if (c.getCount() == 0) {
+                add(body, text("Este producto todavía no tiene lotes.", 14));
+            }
+            while (c.moveToNext()) {
+                long lotId = c.getLong(0);
+                String code = c.getString(1);
+                String exp = c.getString(2);
+                int qty = c.getInt(3);
+                LinearLayout card = cardView();
+                TextView line = text((code.isEmpty() ? "Sin código" : code) + "  ·  " + qty + " uds.", 15);
+                line.setTypeface(Typeface.DEFAULT_BOLD);
+                TextView sub = text(exp.isEmpty() ? "Sin fecha de vencimiento" : "Vence: " + exp, 13);
+                sub.setTextColor(TEXT_GRAY);
+                card.addView(line);
+                card.addView(sub);
+                card.setOnClickListener(v -> new AlertDialog.Builder(this)
+                        .setTitle("Lote")
+                        .setItems(new String[]{"Editar", "Eliminar"}, (d, n) -> {
+                            if (n == 0) lotForm(lotId, pid, code, exp, String.valueOf(qty));
+                            else new AlertDialog.Builder(this)
+                                    .setTitle("¿Eliminar lote?")
+                                    .setMessage("También se restará su cantidad del stock del producto.")
+                                    .setNegativeButton("Cancelar", null)
+                                    .setPositiveButton("Eliminar", (x, w) -> {
+                                        try {
+                                            db.deleteLot(lotId);
+                                            lotsScreen(pid);
+                                        } catch (Exception ex) {
+                                            error(ex);
+                                        }
+                                    })
+                                    .show();
+                        })
+                        .show());
+                add(body, card);
+            }
+        }
+    }
+
+    void lotForm(long lotId, long productId, String code, String expires, String quantity) {
+        EditText codeInput = input("Código de lote", code);
+        EditText expInput = input("Vencimiento AAAA-MM-DD", expires);
+        EditText qtyInput = input("Cantidad", quantity);
+        qtyInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        LinearLayout form = column();
+        form.setPadding(dp(16), dp(16), dp(16), dp(16));
+        form.setBackgroundColor(BG_DARK);
+        TextView title = text(lotId == 0 ? "Nuevo lote" : "Editar lote", 18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        form.addView(title);
+        form.addView(codeInput);
+        form.addView(expInput);
+        form.addView(qtyInput);
+        Button pick = secondaryButton("Elegir fecha", () -> {
+            Calendar cal = Calendar.getInstance();
+            new DatePickerDialog(this, (view, year, month, day) ->
+                    expInput.setText(String.format(Locale.US, "%04d-%02d-%02d", year, month + 1, day)),
+                    cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show();
+        });
+        form.addView(pick);
+        new AlertDialog.Builder(this)
+                .setView(form)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar", (d, w) -> {
+                    try {
+                        db.saveLot(lotId, productId, codeInput.getText().toString().trim(), expInput.getText().toString().trim(),
+                                Integer.parseInt(qtyInput.getText().toString().trim().isEmpty() ? "0" : qtyInput.getText().toString().trim()));
+                        lotsScreen(productId);
+                    } catch (Exception ex) {
+                        error(ex);
+                    }
+                })
+                .show();
     }
 
     EditText lightInput(String hint, String value) {
@@ -1296,11 +1661,12 @@ public class MainActivity extends AppCompatActivity {
         return t;
     }
 
-    void productForm(long id, String barcode) {
-        String[] vals = {barcode, "", "0.00", "0.00", "0", "0", ""};
+    void productForm(long id) {
+        String[] vals = {"", "", "0.00", "0.00", "0", "0", "", ""};
+        int loadedAlert = 30;
         if (id > 0) {
             try (Cursor c = db.getReadableDatabase().rawQuery(
-                    "SELECT barcode, name, price_cents, cost_cents, stock, min_stock, COALESCE(expiration,'') FROM products WHERE id=?",
+                    "SELECT barcode, name, price_cents, cost_cents, stock, min_stock, COALESCE(expiration,''), COALESCE(description,''), COALESCE(alert_days,30) FROM products WHERE id=?",
                     new String[]{"" + id})) {
                 if (c.moveToFirst()) {
                     vals[0] = c.getString(0);
@@ -1310,11 +1676,14 @@ public class MainActivity extends AppCompatActivity {
                     vals[4] = c.getString(4);
                     vals[5] = c.getString(5);
                     vals[6] = c.getString(6);
+                    vals[7] = c.getString(7);
+                    loadedAlert = c.getInt(8);
                 }
             }
         }
 
         final String[] currentExpiration = {vals[6]};
+        final int[] currentAlert = {loadedAlert};
 
         LinearLayout dialogLayout = column();
         dialogLayout.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -1340,7 +1709,7 @@ public class MainActivity extends AppCompatActivity {
         innerCard.setPadding(dp(16), dp(16), dp(16), dp(16));
         innerCard.setBackground(roundedBg(0xFFFFFFFF, 16));
 
-        // Top Section: Image Box + Name & Barcode
+        // Top Section: Image Box + Name
         LinearLayout topRow = row();
         topRow.setGravity(Gravity.CENTER_VERTICAL);
 
@@ -1352,7 +1721,7 @@ public class MainActivity extends AppCompatActivity {
         ImageView camIcon = iconView(R.drawable.ic_camera, PURPLE_PRIMARY, 28);
 
         TextView addImgTxt = new TextView(this);
-        addImgTxt.setText("Agregar imagen");
+        addImgTxt.setText("Producto");
         addImgTxt.setTextSize(10);
         addImgTxt.setTextColor(PURPLE_PRIMARY);
         addImgTxt.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1370,28 +1739,6 @@ public class MainActivity extends AppCompatActivity {
         nameBarCol.addView(lightLabel("Nombre del producto"));
         EditText nameInput = lightInput("Ej. Casio Square Plata", vals[1]);
         nameBarCol.addView(nameInput);
-
-        nameBarCol.addView(lightLabel("Código de barras"));
-        LinearLayout barcodeRow = row();
-        barcodeRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        EditText barcodeInput = lightInput("Ej. 7501234567892", vals[0]);
-        LinearLayout.LayoutParams bcLp = new LinearLayout.LayoutParams(0, -2, 1);
-        bcLp.setMargins(0, 0, dp(6), 0);
-        barcodeInput.setLayoutParams(bcLp);
-        barcodeRow.addView(barcodeInput);
-
-        Button scanBtn = new Button(this);
-        scanBtn.setText("Escanear");
-        scanBtn.setTextSize(11);
-        scanBtn.setAllCaps(false);
-        scanBtn.setTextColor(PURPLE_PRIMARY);
-        scanBtn.setBackground(roundedBg(0xFFF0EEFF, 10));
-        scanBtn.setPadding(dp(8), dp(4), dp(8), dp(4));
-        scanBtn.setOnClickListener(v -> scan("inventory"));
-        barcodeRow.addView(scanBtn, new LinearLayout.LayoutParams(-2, dp(38)));
-
-        nameBarCol.addView(barcodeRow);
         topRow.addView(nameBarCol, new LinearLayout.LayoutParams(0, -2, 1));
 
         innerCard.addView(topRow);
@@ -1436,17 +1783,21 @@ public class MainActivity extends AppCompatActivity {
 
         // Description
         innerCard.addView(lightLabel("Descripción"));
-        EditText descInput = lightInput("Descripción del producto...", "");
+        EditText descInput = lightInput("Descripción del producto...", vals[7]);
         innerCard.addView(descInput);
 
         // Expiration Option Button
         Button expBtn = new Button(this);
-        expBtn.setText("Configurar fecha de vencimiento");
+        expBtn.setText(currentExpiration[0].isEmpty() ? "Configurar fecha de vencimiento" : "Vence: " + currentExpiration[0]);
         expBtn.setTextSize(12);
         expBtn.setAllCaps(false);
         expBtn.setTextColor(PURPLE_PRIMARY);
         expBtn.setBackground(roundedBg(0xFFF0EEFF, 10));
-        expBtn.setOnClickListener(v -> expirationDateDialog(currentExpiration[0], newExp -> currentExpiration[0] = newExp));
+        expBtn.setOnClickListener(v -> expirationDateDialog(currentExpiration[0], currentAlert[0], (newExp, days) -> {
+            currentExpiration[0] = newExp;
+            currentAlert[0] = days;
+            expBtn.setText(newExp.isEmpty() ? "Configurar fecha de vencimiento" : "Vence: " + newExp);
+        }));
         LinearLayout.LayoutParams expLp = new LinearLayout.LayoutParams(-1, -2);
         expLp.setMargins(0, dp(4), 0, dp(12));
         expBtn.setLayoutParams(expLp);
@@ -1476,15 +1827,16 @@ public class MainActivity extends AppCompatActivity {
 
         saveBtn.setOnClickListener(v -> {
             try {
-                String codeVal = barcodeInput.getText().toString().trim();
+                String codeVal = vals[0] == null ? "" : vals[0].trim();
+                if (codeVal.isEmpty()) codeVal = "P" + System.currentTimeMillis();
                 String nameVal = nameInput.getText().toString().trim();
                 String priceVal = priceInput.getText().toString().trim().replace("$", "").trim();
                 String costVal = costInput.getText().toString().trim().replace("$", "").trim();
                 String stockVal = stockInput.getText().toString().trim();
                 String minVal = minStockInput.getText().toString().trim();
 
-                if (codeVal.isEmpty() || nameVal.isEmpty()) {
-                    throw new IllegalArgumentException("El código de barras y el nombre del producto son obligatorios");
+                if (nameVal.isEmpty()) {
+                    throw new IllegalArgumentException("El nombre del producto es obligatorio");
                 }
 
                 db.saveProduct(
@@ -1496,7 +1848,9 @@ public class MainActivity extends AppCompatActivity {
                     Integer.parseInt(stockVal.isEmpty() ? "0" : stockVal),
                     Integer.parseInt(minVal.isEmpty() ? "0" : minVal),
                     currentExpiration[0],
-                    "PRODUCT"
+                    "PRODUCT",
+                    descInput.getText().toString().trim(),
+                    currentAlert[0]
                 );
 
                 dialog.dismiss();
@@ -1510,7 +1864,7 @@ public class MainActivity extends AppCompatActivity {
         dialog.show();
     }
 
-    void expirationDateDialog(String currentExp, java.util.function.Consumer<String> callback) {
+    void expirationDateDialog(String currentExp, int alertDays, java.util.function.BiConsumer<String, Integer> callback) {
         LinearLayout dialogLayout = column();
         dialogLayout.setPadding(dp(16), dp(16), dp(16), dp(16));
         dialogLayout.setBackgroundColor(BG_DARK);
@@ -1577,7 +1931,7 @@ public class MainActivity extends AppCompatActivity {
         innerCard.addView(dateRow);
 
         innerCard.addView(lightLabel("Alertar días antes"));
-        EditText alertDaysInput = lightInput("30 días", "30");
+        EditText alertDaysInput = lightInput("30 días", String.valueOf(alertDays));
         alertDaysInput.setEnabled(expSwitch.isChecked());
         innerCard.addView(alertDaysInput);
 
@@ -1612,10 +1966,13 @@ public class MainActivity extends AppCompatActivity {
 
         closeBtn.setOnClickListener(v -> dialog.dismiss());
         saveBtn.setOnClickListener(v -> {
+            int days = alertDays;
+            String raw = alertDaysInput.getText().toString().replaceAll("[^0-9]", "");
+            if (!raw.isEmpty()) days = Integer.parseInt(raw);
             if (expSwitch.isChecked()) {
-                callback.accept(dateInput.getText().toString().trim());
+                callback.accept(dateInput.getText().toString().trim(), days);
             } else {
-                callback.accept("");
+                callback.accept("", days);
             }
             dialog.dismiss();
         });
@@ -1999,7 +2356,7 @@ public class MainActivity extends AppCompatActivity {
                     Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     i.setType(n == 3 ? "application/octet-stream" : "text/csv");
                     i.addCategory(Intent.CATEGORY_OPENABLE);
-                    i.putExtra(Intent.EXTRA_TITLE, n == 3 ? "tienda-backup.db" : n == 0 ? "productos.csv" : "ventas.csv");
+                    i.putExtra(Intent.EXTRA_TITLE, n == 3 ? "el-tobogan-respaldo.db" : n == 0 ? "el-tobogan-productos.csv" : "el-tobogan-ventas.csv");
                     startActivityForResult(i, 202);
                 } else {
                     pendingExport = n == 2 ? "import" : "restore";
@@ -2071,26 +2428,52 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        int count = 0;
+        List<String[]> rows = new ArrayList<>();
         try (InputStream inputStream = getContentResolver().openInputStream(uri)) {
             if (inputStream == null) throw new IOException("No se pudo abrir el archivo CSV");
             try (BufferedReader r = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
                 String line = r.readLine();
-                if (line == null || !line.contains("barcode")) {
+                if (line != null && line.startsWith("\uFEFF")) line = line.substring(1);
+                if (line == null || !line.toLowerCase(Locale.US).contains("barcode")) {
                     throw new IllegalArgumentException("El archivo CSV no tiene el formato esperado de cabeceras");
                 }
+                int lineNo = 1;
                 while ((line = r.readLine()) != null) {
+                    lineNo++;
+                    if (line.trim().isEmpty()) continue;
                     List<String> a = parseCsv(line);
-                    if (a.size() < 8) throw new IllegalArgumentException("Fila incompleta en línea: " + (count + 2));
-                    db.saveProduct(0, a.get(0), a.get(1), Long.parseLong(a.get(2)), Long.parseLong(a.get(3)), Integer.parseInt(a.get(4)), Integer.parseInt(a.get(5)), a.get(6), a.get(7));
-                    count++;
+                    if (a.size() < 8) throw new IllegalArgumentException("Fila incompleta en la línea " + lineNo);
+                    rows.add(a.toArray(new String[0]));
                 }
-                toast("Importación completada: " + count + " productos");
-                show("Inventario");
             }
         } catch (Exception e) {
             error(e);
+            return;
         }
+        if (rows.isEmpty()) {
+            toast("El archivo no contiene productos");
+            return;
+        }
+        StringBuilder preview = new StringBuilder();
+        int shown = Math.min(5, rows.size());
+        for (int i = 0; i < shown; i++) {
+            preview.append("• ").append(rows.get(i)[1]).append(" (").append(rows.get(i)[0]).append(")\n");
+        }
+        if (rows.size() > shown) preview.append("… y ").append(rows.size() - shown).append(" más");
+        new AlertDialog.Builder(this)
+                .setTitle(StoreDb.STORE_NAME)
+                .setMessage("Se importarán " + rows.size() + " productos en una sola operación. Si alguna fila falla, no se guardará ninguna.\n\n" + preview)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Importar", (d, w) -> {
+                    try {
+                        int n = db.importProducts(rows);
+                        toast("Importación completada: " + n + " productos");
+                        show("Inventario");
+                    } catch (Exception ex) {
+                        error(ex);
+                    }
+                })
+                .show();
     }
 
     List<String> parseCsv(String s) {
@@ -2118,6 +2501,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void restore(Uri uri) {
+        File safety = null;
+        File target = getDatabasePath("mysql.db");
+        boolean replaced = false;
         try {
             File temp = new File(getCacheDir(), "restore-check.db");
             try (InputStream in = getContentResolver().openInputStream(uri);
@@ -2126,39 +2512,113 @@ public class MainActivity extends AppCompatActivity {
                 copy(in, out);
             }
 
-            SQLiteDatabase test = SQLiteDatabase.openDatabase(temp.getPath(), null, SQLiteDatabase.OPEN_READONLY);
-            try (Cursor c = test.rawQuery("PRAGMA integrity_check", null)) {
-                if (!c.moveToFirst() || !"ok".equals(c.getString(0))) {
-                    throw new IOException("El archivo de respaldo está corrupto");
+            try (SQLiteDatabase test = SQLiteDatabase.openDatabase(temp.getPath(), null, SQLiteDatabase.OPEN_READONLY)) {
+                try (Cursor c = test.rawQuery("PRAGMA integrity_check", null)) {
+                    if (!c.moveToFirst() || !"ok".equals(c.getString(0))) {
+                        throw new IOException("El archivo de respaldo está corrupto");
+                    }
+                }
+                try (Cursor c = test.rawQuery("PRAGMA user_version", null)) {
+                    int version = c.moveToFirst() ? c.getInt(0) : 0;
+                    if (version > 2) throw new IOException("El respaldo es de una versión más nueva de la aplicación");
+                }
+                try (Cursor c = test.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('products','sales','tags')", null)) {
+                    if (c.getCount() != 3) {
+                        throw new IOException("El archivo no es una base de datos compatible con la aplicación");
+                    }
+                }
+                try (Cursor c = test.rawQuery("SELECT barcode, name, price_cents, stock FROM products LIMIT 1", null)) {
+                    // Confirma que el esquema de productos es el esperado.
                 }
             }
-            try (Cursor c = test.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('products','sales','tags')", null)) {
-                if (c.getCount() != 3) {
-                    throw new IOException("El archivo no es una base de datos compatible con la aplicación");
-                }
-            }
-            test.close();
 
-            backupSnapshot(); // Safety snapshot
+            safety = backupSnapshot();
             db.close();
-
-            File target = getDatabasePath("mysql.db");
-            File wal = new File(target.getPath() + "-wal");
-            File shm = new File(target.getPath() + "-shm");
-            wal.delete();
-            shm.delete();
-
+            new File(target.getPath() + "-wal").delete();
+            new File(target.getPath() + "-shm").delete();
             try (InputStream in = new FileInputStream(temp);
                  OutputStream out = new FileOutputStream(target)) {
                 copy(in, out);
             }
+            replaced = true;
 
             db = new StoreDb(this);
-            db.getReadableDatabase();
+            try (Cursor c = db.getReadableDatabase().rawQuery("SELECT COUNT(*) FROM products", null)) {
+                if (!c.moveToFirst()) throw new IOException("No se pudo abrir la base restaurada");
+            }
             toast("Respaldo restaurado con éxito");
             show("Inventario");
         } catch (Exception e) {
+            if (replaced) recoverDatabase(safety, target);
             error(e);
+        }
+    }
+
+    void recoverDatabase(File safety, File target) {
+        if (safety == null || !safety.exists()) return;
+        try {
+            if (db != null) db.close();
+            new File(target.getPath() + "-wal").delete();
+            new File(target.getPath() + "-shm").delete();
+            try (InputStream in = new FileInputStream(safety);
+                 OutputStream out = new FileOutputStream(target)) {
+                copy(in, out);
+            }
+            db = new StoreDb(this);
+            db.getReadableDatabase();
+            toast("Se recuperó la base anterior porque la restauración falló");
+        } catch (Exception ignored) {
+        }
+    }
+}
+
+class BarChartView extends View {
+    private final List<String> labels;
+    private final List<Long> values;
+    private final int labelStep;
+    private final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint axis = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    BarChartView(Context context, List<String> labels, List<Long> values, int labelStep) {
+        super(context);
+        this.labels = labels;
+        this.values = values;
+        this.labelStep = Math.max(1, labelStep);
+        float density = context.getResources().getDisplayMetrics().density;
+        bar.setColor(0xFF673DE6);
+        axis.setColor(0xFF2C2C36);
+        axis.setStrokeWidth(density);
+        labelPaint.setColor(0xFF9A9AA6);
+        labelPaint.setTextAlign(Paint.Align.CENTER);
+        labelPaint.setTextSize(11 * density);
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        int width = getWidth();
+        int height = getHeight();
+        float density = getResources().getDisplayMetrics().density;
+        float padL = 8 * density;
+        float padR = 8 * density;
+        float padT = 12 * density;
+        float padB = 28 * density;
+        long max = 1;
+        for (long value : values) if (value > max) max = value;
+        int count = Math.max(values.size(), 1);
+        float gap = 4 * density;
+        float barWidth = (width - padL - padR - gap * (count - 1)) / count;
+        float base = height - padB;
+        canvas.drawLine(padL, base, width - padR, base, axis);
+        for (int i = 0; i < values.size(); i++) {
+            float left = padL + i * (barWidth + gap);
+            float barHeight = (float) values.get(i) / max * (base - padT);
+            if (barHeight > 1) {
+                canvas.drawRoundRect(left, base - barHeight, left + barWidth, base, 6 * density, 6 * density, bar);
+            }
+            if (i % labelStep == 0) {
+                canvas.drawText(labels.get(i), left + barWidth / 2f, height - 6 * density, labelPaint);
+            }
         }
     }
 }

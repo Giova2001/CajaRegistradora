@@ -1,10 +1,10 @@
 {
     "logs": [
         {
-            "outputFile": "com.tiendalocal.app-mergeDebugResources-30:/values-ldrtl-v17/values-ldrtl-v17.xml",
+            "outputFile": "com.tiendalocal.app-mergeDebugResources-2:/values-ldrtl-v17/values-ldrtl-v17.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\Chris Garcia\\.gradle\\caches\\9.6.0\\transforms\\7e3ddf95c6a3fa815ce2c9b000d7c8ce\\transformed\\material-1.12.0\\res\\values-ldrtl-v17\\values-ldrtl-v17.xml",
+                    "source": "/tmp/cursor-sandbox-cache/410c7d2a347f11c76fa0a21dbbda24d4/gradle/caches/9.6.0/transforms/4dbb4eff91f0c8ca32f1b6bddc205b90/transformed/material-1.12.0/res/values-ldrtl-v17/values-ldrtl-v17.xml",
                     "from": {
                         "startLines": "2,3",
                         "startColumns": "4,4",
